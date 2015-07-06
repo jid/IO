@@ -10,7 +10,7 @@ namespace IO
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Test programu");
+            Console.WriteLine("Test programu 2");
             Console.ReadKey();
         }
     }
