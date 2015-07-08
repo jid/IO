@@ -5,12 +5,15 @@ using System.Text;
 using System.Threading.Tasks;
 using System.IO;
 using System.Security.AccessControl;
+using System.IO.Compression;
+using System.Threading;
+using System.Net;
 
 namespace IO
 {
     class Program
     {
-        static void Main(string[] args)
+        private static async void Parctice1DirFileOp()
         {
             Console.WriteLine("######################");
             Console.WriteLine("1. Listing drives info");
@@ -122,12 +125,12 @@ namespace IO
             Console.WriteLine("");
             Console.WriteLine(String.Format("Directory listing of \"{0}\": search pattern \"{1}\", depth {2}, start level {3}...", listingRoot, searchPattern, depth, startLevel));
             DirectoryInfo directoryInfoTree = new DirectoryInfo(@"C:\Program Files");
-            ListDirectories(directoryInfoTree, searchPattern, depth, startLevel);
+            _listDirectories(directoryInfoTree, searchPattern, depth, startLevel);
 
             // Moving directory
             Console.WriteLine("");
             Console.WriteLine(String.Format("Moving directory {0} to {1}...", @"C:\Temp\ProgrammingInCSharp\DirectoryToBeMoved", @"C:\Temp\ProgrammingInCSharp\DirectoryAfterMoving"));
-            DeleteDirIfExist(@"C:\Temp\ProgrammingInCSharp\DirectoryAfterMoving", false);
+            _deleteDirIfExist(@"C:\Temp\ProgrammingInCSharp\DirectoryAfterMoving", false);
             Directory.CreateDirectory(@"C:\Temp\ProgrammingInCSharp\DirectoryToBeMoved");
             Directory.Move(@"C:\Temp\ProgrammingInCSharp\DirectoryToBeMoved", @"C:\Temp\ProgrammingInCSharp\DirectoryAfterMoving");
 
@@ -156,18 +159,26 @@ namespace IO
             string dirPath = @"C:\Temp\ProgrammingInCSharp\FilesOperations";
             string fileName = Path.GetRandomFileName();
             string filePath = Path.Combine(dirPath, fileName);
-            DeleteDirIfExist(dirPath, true);
-            Directory.CreateDirectory(dirPath);
+            _deleteDirIfExist(dirPath, true);
+
+            // Create directory in a new thread and await for completing operation.
+            // Problem is when we navigate into existing folder in Windows Explorer and run application.
+            // Folder is first removed and created once again.
+            // Before forder is created (don't know why!) application tries to create files in it!
+            Thread thread = new Thread(new ThreadStart(() => Directory.CreateDirectory(dirPath)));
+            thread.Start();
+            thread.Join();
 
             if (!File.Exists(filePath))
             {
                 Console.WriteLine("");
                 Console.WriteLine(String.Format("Creating file {0} (using static File class)...", filePath));
                 var fileTxt = File.CreateText(filePath);
+                fileTxt.WriteLine("{0,15}", 1234);
                 fileTxt.Close();
             }
 
-            if(File.Exists(filePath))
+            if (File.Exists(filePath))
             {
                 Console.WriteLine("");
                 Console.WriteLine(String.Format("Deleting file {0} (using static File class)...", filePath));
@@ -175,7 +186,7 @@ namespace IO
             }
 
             FileInfo fileInfo = new FileInfo(filePath);
-            if(fileInfo.Exists)
+            if (fileInfo.Exists)
             {
                 Console.WriteLine("");
                 Console.WriteLine(String.Format("Deleting file {0} (using new FileInfo object)...", filePath));
@@ -194,12 +205,154 @@ namespace IO
             //Console.WriteLine(Path.GetExtension(path)); // Displays .txt
             //Console.WriteLine(Path.GetFileName(path)); // Displays file.txt
             //Console.WriteLine(Path.GetPathRoot(path)); // Displays C:\
+        }
+
+        private static void Parctice2StreamsOp()
+        {
+            Console.WriteLine("");
+            Console.WriteLine("#####################################");
+            Console.WriteLine("STREAMS (implemets decorator pattern)");
+            Console.WriteLine("#####################################");
+            Console.WriteLine("");
+
+            Console.WriteLine("");
+            Console.WriteLine("#######################");
+            Console.WriteLine("1. File writing/reading");
+            Console.WriteLine("#######################");
+            Console.WriteLine("");
+
+            string path = @"C:\Temp\ProgrammingInCSharp\FilesOperations\test.dat";
+            using(FileStream fileStream = File.Create(path))
+            {
+                string myVal = "MyValue";
+                byte[] data = Encoding.UTF8.GetBytes(myVal);
+                fileStream.Write(data, 0, data.Length);
+            }
+
+            Console.WriteLine(String.Format("File has been created \"{0}\"", path));
+
+            using(StreamReader fileStream = File.OpenText(path))
+            {
+                Console.WriteLine("");
+                Console.WriteLine("Reading written file as whole string at once (using implicit UTF-8 StreamReader object from File.OpenText(path))");
+                Console.WriteLine(fileStream.ReadToEnd()); // Should display MyValue
+            }
+
+            using (FileStream fileStream = File.OpenRead(path))
+            {
+                Console.WriteLine("");
+                Console.WriteLine("Reading written file byte by byte (using FileStream object from OpenRead(path))");
+                byte[] data = new byte[fileStream.Length];
+                // fileStream.Read(data, 0, data.Length); // METHOD 1
+                for (int index = 0; index < fileStream.Length; index++) // METHOD 2
+                {
+                    data[index] = (byte)fileStream.ReadByte();
+                }
+                Console.WriteLine(Encoding.UTF8.GetString(data)); // Should display MyValue
+            }
+
+            Console.WriteLine("");
+            Console.WriteLine("##############################################");
+            Console.WriteLine("2. Compression - decorator pattern in practice");
+            Console.WriteLine("##############################################");
+            Console.WriteLine("");
+
+            string folder = @"C:\Temp\ProgrammingInCSharp\FilesOperations";
+            string uncompressedFilePath = Path.Combine(folder, "uncompressed.dat");
+            string compressedFilePath = Path.Combine(folder, "compressed.gz");
+            byte[] dataToCompress = Enumerable.Repeat((byte)'a', 1024 * 1024).ToArray();
+
+            // Write raw file
+            using (FileStream uncompressedFileStream = File.Create(uncompressedFilePath))
+            {
+                uncompressedFileStream.Write(dataToCompress, 0, dataToCompress.Length);
+            }
+
+            // Write compressed file
+            using (FileStream compressedFileStream = File.Create(compressedFilePath))
+            {
+                using (GZipStream compressionStream = new GZipStream(compressedFileStream, CompressionMode.Compress))
+                {
+                    compressionStream.Write(dataToCompress, 0, dataToCompress.Length);
+                }
+            }
+            FileInfo uncompressedFile = new FileInfo(uncompressedFilePath);
+            FileInfo compressedFile = new FileInfo(compressedFilePath);
+            Console.WriteLine(String.Format("Rozmiar pliku przed kompresją: {0} kb", uncompressedFile.Length / 1024)); // Displays 1048576
+            Console.WriteLine(String.Format("Rozmiar pliku po kompresji: {0} kb", compressedFile.Length / 1024)); // Displays 1052
+
+            Console.WriteLine("");
+            Console.WriteLine("##################");
+            Console.WriteLine("3. Buffered stream");
+            Console.WriteLine("##################");
+            Console.WriteLine("");
+
+            string pathBufferedStream = @"C:\Temp\ProgrammingInCSharp\FilesOperations\bufferedStream.txt";
+            using(FileStream fileStream = File.Create(pathBufferedStream))
+            {
+                using(BufferedStream bufferedStream = new BufferedStream(fileStream))
+                {
+                    using(StreamWriter streamWriter = new StreamWriter(bufferedStream, Encoding.UTF8))
+                    {
+                        streamWriter.WriteLine("A line of text");
+                        streamWriter.WriteLine("Another line of text");
+                        streamWriter.WriteLine("The last line of text");
+                    }
+                }
+            }
+            Console.WriteLine(String.Format("Plik \"{0}\" został zapisany.", pathBufferedStream));
+        }
+
+        private static void Parctice2WebOp()
+        {
+            Console.WriteLine("");
+            Console.WriteLine("##################################");
+            Console.WriteLine("Network communication (basic http)");
+            Console.WriteLine("##################################");
+            Console.WriteLine("");
+
+            Console.WriteLine("");
+            Console.WriteLine("############################");
+            Console.WriteLine("1. HTTP request and response");
+            Console.WriteLine("############################");
+            Console.WriteLine("");
+
+            // Use static method to create request
+            string url = "http://www.microsoft.com";
+            WebRequest request = WebRequest.Create(url);
+            WebResponse response = request.GetResponse();
+
+            Console.WriteLine(String.Format("Request do \"{0}\".", url));
+            StreamReader responseStream = new StreamReader(response.GetResponseStream());
+            
+            Console.WriteLine("");
+            Console.WriteLine("Odczyt pierwszej linii:");
+            string responseText = responseStream.ReadLine();
+            Console.WriteLine(responseText);
+            response.Close();
+        }
+
+        /// <summary>
+        /// Main function
+        /// </summary>
+        /// <param name="args"></param>
+        static void Main(string[] args)
+        {
+            // Examples for basic directory, files and drives operations
+            Parctice1DirFileOp();
+
+            // Examples for streams handling
+            Parctice2StreamsOp();
+
+            // Examples for HTTP communication
+            Parctice2WebOp();
 
             // Do not close console window
             Console.ReadKey();
         }
 
-        private static void ListDirectories(DirectoryInfo directoryInfo, string searchPattern, int maxLevel, int currentLevel)
+        #region helper functions
+        private static void _listDirectories(DirectoryInfo directoryInfo, string searchPattern, int maxLevel, int currentLevel)
         {
             if (currentLevel >= maxLevel)
             {
@@ -213,7 +366,7 @@ namespace IO
                 foreach (DirectoryInfo subDirectory in subDirectories)
                 {
                     Console.WriteLine(indent + subDirectory.Name);
-                    ListDirectories(subDirectory, searchPattern, maxLevel, currentLevel + 1);
+                    _listDirectories(subDirectory, searchPattern, maxLevel, currentLevel + 1);
                 }
             }
             catch (UnauthorizedAccessException)
@@ -230,7 +383,7 @@ namespace IO
             }
         }
 
-        private static void DeleteDirIfExist(string path, bool recursive)
+        private static void _deleteDirIfExist(string path, bool recursive)
         {
             try
             {
@@ -248,5 +401,6 @@ namespace IO
 
             return;
         }
+        #endregion
     }
 }
